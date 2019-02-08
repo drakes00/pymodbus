@@ -103,11 +103,12 @@ class ModbusRtuFramer(ModbusFramer):
         current frame header handle
         """
         try:
-            self._buffer = self._buffer[self._header['len']:]
+            #self._buffer = self._buffer[self._header['len']:]
+            self._buffer = self._end.join(self._buffer.split(self._end)[1:])
         except KeyError:
             #   Error response, no header len found
             self.resetFrame()
-        _logger.debug("Frame advanced, resetting header!!")
+        _logger.debug("Frame advanced, buffer: {}".format(self._buffer))
         self._header = {}
 
     def resetFrame(self):
@@ -161,6 +162,7 @@ class ModbusRtuFramer(ModbusFramer):
         :param message: The most recent packet
         """
         self._buffer += message
+        self._buffer += self._end
 
     def getFrame(self):
         """
@@ -214,16 +216,20 @@ class ModbusRtuFramer(ModbusFramer):
             unit = [unit]
         self.addToFrame(data)
         single = kwargs.get("single", False)
-        if self.isFrameReady():
-            if self.checkFrame():
-                if self._validate_unit_id(unit, single):
-                    self._process(callback)
+        while self._buffer != b'':
+            if self.isFrameReady():
+                if self.checkFrame():
+                    if self._validate_unit_id(unit, single):
+                        self._process(callback)
+                    else:
+                        _logger.debug("Not a valid unit id - {}, "
+                                      "ignoring!!".format(self._header['uid']))
+                        self.advanceFrame()
                 else:
-                    _logger.debug("Not a valid unit id - {}, "
-                                  "ignoring!!".format(self._header['uid']))
-                    self.resetFrame()
-        else:
-            _logger.debug("Frame - [{}] not ready".format(data))
+                    _logger.debug("Invalid CRC")
+                    self.advanceFrame()
+            else:
+                _logger.debug("Frame - [{}] not ready".format(data))
 
     def buildPacket(self, message):
         """
